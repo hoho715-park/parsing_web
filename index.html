@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JavaScript Code Parsing Web App</title>
+
+<!-- JSZip -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<!-- Meriyah Parser (브라우저용) -->
+<script src="https://unpkg.com/meriyah/dist/meriyah.umd.js"></script>
+
+<style>
+    body {
+        background: #121212;
+        color: #ffffff;
+        font-family: 'Segoe UI', sans-serif;
+        margin: 0;
+        padding: 30px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    h1 {
+        font-size: 32px;
+        margin-bottom: 20px;
+        color: #FFCC66;
+        text-shadow: 0 0 10px rgba(255, 204, 102, 0.6);
+    }
+
+    /* 업로드 박스 */
+    .upload-box {
+        width: 90%;
+        max-width: 600px;
+        border: 2px dashed #555;
+        border-radius: 15px;
+        padding: 30px;
+        text-align: center;
+        background: #1E1E1E;
+        transition: 0.3s;
+        cursor: pointer;
+    }
+
+    .upload-box:hover,
+    .upload-box.dragover {
+        border-color: #FFCC66;
+        background: #2A2A2A;
+        box-shadow: 0 0 15px rgba(255, 204, 102, 0.4);
+    }
+
+    .upload-box p {
+        margin: 10px 0;
+        color: #DDD;
+    }
+
+    /* AST 출력 영역 */
+    #result {
+        margin-top: 30px;
+        width: 90%;
+        max-width: 900px;
+        height: 500px;
+        background: #000;
+        padding: 20px;
+        border-radius: 10px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        font-size: 14px;
+        color: #00FF88;
+        font-family: Consolas, monospace;
+        box-shadow: 0 0 15px rgba(0, 255, 136, 0.2);
+    }
+
+    input[type="file"] {
+        display: none;
+    }
+</style>
+</head>
+
+<body>
+
+<h1>⚡ JavaScript Code Parsing Web App</h1>
+
+<!-- 업로드 박스 -->
+<label for="zipUpload" id="dropZone" class="upload-box">
+    <p>📦 ZIP 파일 업로드 또는 끌어다 놓기</p>
+    <p style="font-size: 13px; color:#aaa;">(JavaScript 소스코드 포함)</p>
+    <button style="
+        margin-top:10px;
+        padding:10px 20px;
+        border:none;
+        border-radius:8px;
+        background:#FFCC66;
+        color:#000;
+        cursor:pointer;
+        font-weight:bold;
+    ">파일 선택</button>
+</label>
+
+<input type="file" id="zipUpload" accept=".zip">
+
+<!-- 결과 영역 -->
+<div id="result">AST 결과가 여기에 표시됩니다...</div>
+
+<script>
+const dropZone = document.getElementById("dropZone");
+const zipInput = document.getElementById("zipUpload");
+const resultBox = document.getElementById("result");
+
+/* ===========================
+   1) Drag & Drop Event 추가
+   =========================== */
+
+dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("dragover");
+});
+
+dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("dragover");
+});
+
+dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+
+    const file = e.dataTransfer.files[0];
+    if (file) handleZipFile(file);
+});
+
+/* 파일 선택 버튼 */
+zipInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (file) handleZipFile(file);
+});
+
+
+/* ===========================
+   2) ZIP 파일 처리 함수
+   =========================== */
+
+async function handleZipFile(file) {
+    resultBox.textContent = "📦 ZIP 파일을 분석 중...\n";
+
+    const jszip = new JSZip();
+    const zip = await jszip.loadAsync(file);
+
+    const jsFiles = [];
+    zip.forEach((path, entry) => {
+        if (path.endsWith(".js")) jsFiles.push(entry);
+    });
+
+    if (jsFiles.length === 0) {
+        resultBox.textContent = "❌ ZIP 안에 JS 파일(.js)이 없습니다!";
+        return;
+    }
+
+    for (const entry of jsFiles) {
+        const code = await entry.async("string");
+
+        resultBox.textContent += `\n📄 파일: ${entry.name}\n`;
+
+        try {
+            /* ======================
+               ⭐ Meriyah 파서 사용
+               ====================== */
+            const ast = meriyah.parse(code, {
+                module: true,
+                next: true,
+                loc: true,
+                ranges: true,
+            });
+
+            resultBox.textContent += JSON.stringify(ast, null, 2) + "\n\n";
+
+        } catch (err) {
+            resultBox.textContent += `❌ 파싱 오류: ${err.message}\n`;
+        }
+    }
+}
+</script>
+
+</body>
+</html>
