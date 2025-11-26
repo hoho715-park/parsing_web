@@ -8,7 +8,7 @@
 <!-- JSZip -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
-<!-- Meriyah Parser (브라우저용) -->
+<!-- Meriyah Parser -->
 <script src="https://unpkg.com/meriyah/dist/meriyah.umd.js"></script>
 
 <style>
@@ -27,10 +27,10 @@
         font-size: 32px;
         margin-bottom: 20px;
         color: #FFCC66;
-        text-shadow: 0 0 10px rgba(255, 204, 102, 0.6);
+        text-shadow: 0 0 8px rgba(255, 204, 102, 0.5);
     }
 
-    /* 업로드 박스 */
+    /* 업로드 박스 디자인 */
     .upload-box {
         width: 90%;
         max-width: 600px;
@@ -47,15 +47,14 @@
     .upload-box.dragover {
         border-color: #FFCC66;
         background: #2A2A2A;
-        box-shadow: 0 0 15px rgba(255, 204, 102, 0.4);
+        box-shadow: 0 0 12px rgba(255, 204, 102, 0.4);
     }
 
-    .upload-box p {
-        margin: 10px 0;
-        color: #DDD;
+    input[type="file"] {
+        display: none;
     }
 
-    /* AST 출력 영역 */
+    /* AST 출력 박스 */
     #result {
         margin-top: 30px;
         width: 90%;
@@ -64,16 +63,30 @@
         background: #000;
         padding: 20px;
         border-radius: 10px;
-        overflow-y: auto;
+        overflow-y: scroll;
         white-space: pre-wrap;
         font-size: 14px;
-        color: #00FF88;
         font-family: Consolas, monospace;
-        box-shadow: 0 0 15px rgba(0, 255, 136, 0.2);
+        color: #00FF88;
+        box-shadow: 0 0 15px rgba(0, 255, 136, 0.15);
     }
 
-    input[type="file"] {
-        display: none;
+    /* ------------------------------
+       ✨ 커스텀 스크롤바 디자인
+    ------------------------------ */
+    #result::-webkit-scrollbar {
+        width: 8px;
+    }
+    #result::-webkit-scrollbar-track {
+        background: #202020;
+        border-radius: 10px;
+    }
+    #result::-webkit-scrollbar-thumb {
+        background: #00ff88cc;
+        border-radius: 10px;
+    }
+    #result::-webkit-scrollbar-thumb:hover {
+        background: #00ffaa;
     }
 </style>
 </head>
@@ -108,19 +121,16 @@ const dropZone = document.getElementById("dropZone");
 const zipInput = document.getElementById("zipUpload");
 const resultBox = document.getElementById("result");
 
-/* ===========================
-   1) Drag & Drop Event 추가
-   =========================== */
-
+/* ======================================
+   1) DRAG & DROP 기능
+====================================== */
 dropZone.addEventListener("dragover", (e) => {
     e.preventDefault();
     dropZone.classList.add("dragover");
 });
-
 dropZone.addEventListener("dragleave", () => {
     dropZone.classList.remove("dragover");
 });
-
 dropZone.addEventListener("drop", (e) => {
     e.preventDefault();
     dropZone.classList.remove("dragover");
@@ -129,17 +139,15 @@ dropZone.addEventListener("drop", (e) => {
     if (file) handleZipFile(file);
 });
 
-/* 파일 선택 버튼 */
+/* 파일 선택 */
 zipInput.addEventListener("change", (e) => {
     const file = e.target.files[0];
     if (file) handleZipFile(file);
 });
 
-
-/* ===========================
-   2) ZIP 파일 처리 함수
-   =========================== */
-
+/* ======================================
+   2) ZIP 파일 로드 및 JS 파일 파싱
+====================================== */
 async function handleZipFile(file) {
     resultBox.textContent = "📦 ZIP 파일을 분석 중...\n";
 
@@ -162,14 +170,12 @@ async function handleZipFile(file) {
         resultBox.textContent += `\n📄 파일: ${entry.name}\n`;
 
         try {
-            /* ======================
-               ⭐ Meriyah 파서 사용
-               ====================== */
+            // ⭐ Meriyah로 파싱
             const ast = meriyah.parse(code, {
                 module: true,
                 next: true,
                 loc: true,
-                ranges: true,
+                ranges: true
             });
 
             resultBox.textContent += JSON.stringify(ast, null, 2) + "\n\n";
