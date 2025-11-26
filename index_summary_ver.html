@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JavaScript Code Parsing & Summary Web App</title>
+
+<!-- JSZip -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<!-- Meriyah Parser -->
+<script src="https://unpkg.com/meriyah/dist/meriyah.umd.js"></script>
+
+<style>
+    body {
+        background: #121212;
+        color: #ffffff;
+        font-family: 'Segoe UI', sans-serif;
+        margin: 0;
+        padding: 30px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    h1 {
+        font-size: 32px;
+        margin-bottom: 20px;
+        color: #FFCC66;
+        text-shadow: 0 0 8px rgba(255, 204, 102, 0.5);
+    }
+
+    .upload-box {
+        width: 90%;
+        max-width: 600px;
+        border: 2px dashed #555;
+        border-radius: 15px;
+        padding: 30px;
+        text-align: center;
+        background: #1E1E1E;
+        transition: 0.3s;
+        cursor: pointer;
+    }
+
+    .upload-box:hover,
+    .upload-box.dragover {
+        border-color: #FFCC66;
+        background: #2A2A2A;
+        box-shadow: 0 0 12px rgba(255, 204, 102, 0.4);
+    }
+
+    input[type="file"] {
+        display: none;
+    }
+
+    /* AST 요약 박스 */
+    #summaryBox {
+        width: 90%;
+        max-width: 900px;
+        background: #1E1E1E;
+        padding: 20px;
+        border-radius: 10px;
+        margin-top: 20px;
+        line-height: 1.7;
+        font-size: 16px;
+    }
+
+    /* AST 전체 출력 박스 */
+    #result {
+        margin-top: 20px;
+        width: 90%;
+        max-width: 900px;
+        height: 400px;
+        background: #000;
+        padding: 20px;
+        border-radius: 10px;
+        overflow-y: scroll;
+        white-space: pre-wrap;
+        font-size: 13px;
+        font-family: Consolas, monospace;
+        color: #00FF88;
+    }
+
+    /* 스크롤바 디자인 */
+    #result::-webkit-scrollbar {
+        width: 8px;
+    }
+    #result::-webkit-scrollbar-track {
+        background: #202020;
+        border-radius: 10px;
+    }
+    #result::-webkit-scrollbar-thumb {
+        background: #00ff88cc;
+        border-radius: 10px;
+    }
+</style>
+</head>
+
+<body>
+
+<h1>⚡ JavaScript Code Parsing + AST Summary</h1>
+
+<label for="zipUpload" id="dropZone" class="upload-box">
+    <p>📦 ZIP 파일 업로드 또는 드래그 앤 드롭</p>
+    <p style="font-size: 13px; color:#aaa;">(JavaScript 파일 포함)</p>
+    <button style="
+        margin-top:10px;
+        padding:10px 20px;
+        border:none;
+        border-radius:8px;
+        background:#FFCC66;
+        color:#000;
+        cursor:pointer;
+        font-weight:bold;
+    ">파일 선택</button>
+</label>
+
+<input type="file" id="zipUpload" accept=".zip">
+
+<!-- AST 요약 -->
+<div id="summaryBox">📝 AST 요약이 여기에 표시됩니다.</div>
+
+<!-- AST 원본 JSON -->
+<div id="result">AST 전체 JSON이 여기에 표시됩니다.</div>
+
+
+<script>
+const dropZone = document.getElementById("dropZone");
+const zipInput = document.getElementById("zipUpload");
+const summaryBox = document.getElementById("summaryBox");
+const resultBox = document.getElementById("result");
+
+/* ===========================
+   DRAG & DROP 기능
+=========================== */
+
+dropZone.addEventListener("dragover", e => {
+    e.preventDefault();
+    dropZone.classList.add("dragover");
+});
+dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("dragover");
+});
+dropZone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+    const file = e.dataTransfer.files[0];
+    if (file) handleZipFile(file);
+});
+zipInput.addEventListener("change", e => {
+    const file = e.target.files[0];
+    if (file) handleZipFile(file);
+});
+
+
+/* ===========================
+   ZIP 처리 + JS 파싱
+=========================== */
+
+async function handleZipFile(file) {
+    summaryBox.textContent = "📦 ZIP 파일을 분석 중...";
+    resultBox.textContent = "";
+
+    const jszip = new JSZip();
+    const zip = await jszip.loadAsync(file);
+
+    const jsFiles = [];
+    zip.forEach((path, entry) => {
+        if (path.endsWith(".js")) jsFiles.push(entry);
+    });
+
+    if (jsFiles.length === 0) {
+        summaryBox.textContent = "❌ ZIP 안에 JS 파일(.js)이 없습니다!";
+        return;
+    }
+
+    // 요약 정보 누적
+    let totalFunctions = 0;
+    let totalVariables = 0;
+    let eventHandlers = 0;
+
+    for (const entry of jsFiles) {
+        const code = await entry.async("string");
+
+        // AST 생성
+        const ast = meriyah.parse(code, {
+            module: true,
+            next: true,
+            loc: true
+        });
+
+        // JSON 전체 출력
+        resultBox.textContent += `\n📄 파일: ${entry.name}\n` +
+            JSON.stringify(ast, null, 2) + "\n\n";
+
+        // AST 요약 분석
+        const summary = analyzeAST(ast);
+
+        totalFunctions += summary.functions;
+        totalVariables += summary.variables;
+        eventHandlers += summary.eventListeners;
+    }
+
+    // 최종 요약 표시
+    summaryBox.innerHTML = `
+        <h3>📊 AST 요약 분석 결과</h3>
+        ✔ 함수 선언(FunctionDeclaration): <b>${totalFunctions}</b><br>
+        ✔ 변수 선언(VariableDeclarator): <b>${totalVariables}</b><br>
+        ✔ 이벤트 핸들러(addEventListener): <b>${eventHandlers}</b><br>
+        ✔ JS 파일 개수: <b>${jsFiles.length}</b><br>
+        ✔ 분석 완료 시간: <b>${new Date().toLocaleTimeString()}</b>
+    `;
+}
+
+
+/* ===========================
+   AST 분석 함수
+=========================== */
+
+function analyzeAST(ast) {
+    let functions = 0;
+    let variables = 0;
+    let eventListeners = 0;
+
+    function walk(node) {
+        if (!node || typeof node !== "object") return;
+
+        if (node.type === "FunctionDeclaration") functions++;
+        if (node.type === "VariableDeclarator") variables++;
+
+        if (node.type === "CallExpression" &&
+            node.callee &&
+            node.callee.property &&
+            node.callee.property.name === "addEventListener") {
+            eventListeners++;
+        }
+
+        for (let key in node) {
+            walk(node[key]);
+        }
+    }
+
+    walk(ast);
+
+    return { functions, variables, eventListeners };
+}
+
+</script>
+
+</body>
+</html>
