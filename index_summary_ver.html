@@ -53,7 +53,6 @@
         display: none;
     }
 
-    /* AST 요약 박스 */
     #summaryBox {
         width: 90%;
         max-width: 900px;
@@ -65,8 +64,7 @@
         font-size: 16px;
     }
 
-    /* AST 전체 출력 박스 */
-    #result {
+    #result, #astJsonBox {
         margin-top: 20px;
         width: 90%;
         max-width: 900px;
@@ -81,15 +79,17 @@
         color: #00FF88;
     }
 
-    /* 스크롤바 디자인 */
-    #result::-webkit-scrollbar {
+    #result::-webkit-scrollbar,
+    #astJsonBox::-webkit-scrollbar {
         width: 8px;
     }
-    #result::-webkit-scrollbar-track {
+    #result::-webkit-scrollbar-track,
+    #astJsonBox::-webkit-scrollbar-track {
         background: #202020;
         border-radius: 10px;
     }
-    #result::-webkit-scrollbar-thumb {
+    #result::-webkit-scrollbar-thumb,
+    #astJsonBox::-webkit-scrollbar-thumb {
         background: #00ff88cc;
         border-radius: 10px;
     }
@@ -117,11 +117,12 @@
 
 <input type="file" id="zipUpload" accept=".zip">
 
-<!-- AST 요약 -->
 <div id="summaryBox">📝 AST 요약이 여기에 표시됩니다.</div>
 
-<!-- AST 원본 JSON -->
 <div id="result">AST 전체 JSON이 여기에 표시됩니다.</div>
+
+<!-- ★ 추가: ast.json 출력 박스 -->
+<div id="astJsonBox" style="display:none;">ZIP 내부 ast.json 결과가 여기에 표시됩니다.</div>
 
 
 <script>
@@ -129,24 +130,29 @@ const dropZone = document.getElementById("dropZone");
 const zipInput = document.getElementById("zipUpload");
 const summaryBox = document.getElementById("summaryBox");
 const resultBox = document.getElementById("result");
+const astJsonBox = document.getElementById("astJsonBox");
+
 
 /* ===========================
-   DRAG & DROP 기능
+   DnD 기능
 =========================== */
 
 dropZone.addEventListener("dragover", e => {
     e.preventDefault();
     dropZone.classList.add("dragover");
 });
+
 dropZone.addEventListener("dragleave", () => {
     dropZone.classList.remove("dragover");
 });
+
 dropZone.addEventListener("drop", e => {
     e.preventDefault();
     dropZone.classList.remove("dragover");
     const file = e.dataTransfer.files[0];
     if (file) handleZipFile(file);
 });
+
 zipInput.addEventListener("change", e => {
     const file = e.target.files[0];
     if (file) handleZipFile(file);
@@ -154,67 +160,84 @@ zipInput.addEventListener("change", e => {
 
 
 /* ===========================
-   ZIP 처리 + JS 파싱
+   ZIP 처리 + app.js + ast.json
 =========================== */
 
 async function handleZipFile(file) {
     summaryBox.textContent = "📦 ZIP 파일을 분석 중...";
     resultBox.textContent = "";
+    astJsonBox.style.display = "none";
 
     const jszip = new JSZip();
     const zip = await jszip.loadAsync(file);
 
-    const jsFiles = [];
+    let appJsFile = null;
+    let astJsonFile = null;
+
+    // ★ app.js와 ast.json 자동 탐지
     zip.forEach((path, entry) => {
-        if (path.endsWith(".js")) jsFiles.push(entry);
+        if (path.endsWith("app.js")) {
+            appJsFile = entry;
+        }
+        if (path.endsWith("ast.json")) {
+            astJsonFile = entry;
+        }
     });
 
-    if (jsFiles.length === 0) {
-        summaryBox.textContent = "❌ ZIP 안에 JS 파일(.js)이 없습니다!";
+    if (!appJsFile) {
+        summaryBox.textContent = "❌ ZIP 안에 app.js 파일이 없습니다!";
         return;
     }
 
-    // 요약 정보 누적
-    let totalFunctions = 0;
-    let totalVariables = 0;
-    let eventHandlers = 0;
+    // -------------------------
+    // 1) app.js 파싱
+    // -------------------------
+    const code = await appJsFile.async("string");
 
-    for (const entry of jsFiles) {
-        const code = await entry.async("string");
+    const ast = meriyah.parse(code, {
+        module: true,
+        next: true,
+        loc: true
+    });
 
-        // AST 생성
-        const ast = meriyah.parse(code, {
-            module: true,
-            next: true,
-            loc: true
-        });
+    resultBox.textContent = `📄 파일: ${appJsFile.name}\n` +
+        JSON.stringify(ast, null, 2);
 
-        // JSON 전체 출력
-        resultBox.textContent += `\n📄 파일: ${entry.name}\n` +
-            JSON.stringify(ast, null, 2) + "\n\n";
 
-        // AST 요약 분석
-        const summary = analyzeAST(ast);
+    const summary = analyzeAST(ast);
 
-        totalFunctions += summary.functions;
-        totalVariables += summary.variables;
-        eventHandlers += summary.eventListeners;
-    }
-
-    // 최종 요약 표시
     summaryBox.innerHTML = `
         <h3>📊 AST 요약 분석 결과</h3>
-        ✔ 함수 선언(FunctionDeclaration): <b>${totalFunctions}</b><br>
-        ✔ 변수 선언(VariableDeclarator): <b>${totalVariables}</b><br>
-        ✔ 이벤트 핸들러(addEventListener): <b>${eventHandlers}</b><br>
-        ✔ JS 파일 개수: <b>${jsFiles.length}</b><br>
+        ✔ 함수 선언(FunctionDeclaration): <b>${summary.functions}</b><br>
+        ✔ 변수 선언(VariableDeclarator): <b>${summary.variables}</b><br>
+        ✔ 이벤트 핸들러(addEventListener): <b>${summary.eventListeners}</b><br>
+        ✔ 파일 이름: <b>${appJsFile.name}</b><br>
         ✔ 분석 완료 시간: <b>${new Date().toLocaleTimeString()}</b>
     `;
+
+    // -------------------------
+    // ★ 2) ZIP 안에 ast.json이 있으면 화면 출력
+    // -------------------------
+    if (astJsonFile) {
+        const jsonText = await astJsonFile.async("string");
+
+        try {
+            const parsedJson = JSON.parse(jsonText);
+
+            astJsonBox.style.display = "block";
+            astJsonBox.textContent = `📄 ZIP 내부 ast.json 파일:\n\n` +
+                JSON.stringify(parsedJson, null, 2);
+
+        } catch (e) {
+            astJsonBox.style.display = "block";
+            astJsonBox.textContent = "⚠ ast.json 파싱 실패 (JSON 형식 오류)";
+        }
+    }
 }
 
 
 /* ===========================
-   AST 분석 함수
+   AST 분석
 =========================== */
 
 function analyzeAST(ast) {
@@ -228,20 +251,19 @@ function analyzeAST(ast) {
         if (node.type === "FunctionDeclaration") functions++;
         if (node.type === "VariableDeclarator") variables++;
 
-        if (node.type === "CallExpression" &&
+        if (
+            node.type === "CallExpression" &&
             node.callee &&
             node.callee.property &&
-            node.callee.property.name === "addEventListener") {
+            node.callee.property.name === "addEventListener"
+        ) {
             eventListeners++;
         }
 
-        for (let key in node) {
-            walk(node[key]);
-        }
+        for (let key in node) walk(node[key]);
     }
 
     walk(ast);
-
     return { functions, variables, eventListeners };
 }
 
