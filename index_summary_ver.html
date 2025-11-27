@@ -75,19 +75,55 @@
         border-radius: 10px;
     }
 
-    #result, #astJsonBox {
-        margin-top: 20px;
+    /* 코드 영역 공통 스타일 */
+    .code-section {
         width: 90%;
         max-width: 1000px;
+        margin-top: 20px;
+    }
+    .code-title {
+        background: #1e1e1e;
+        padding: 8px 14px;
+        border-radius: 8px 8px 0 0;
+        font-size: 14px;
+        color: #FFCC66;
+        border: 1px solid #333;
+        border-bottom: none;
+    }
+    .code-box {
         height: 400px;
         background: #000;
         padding: 20px;
-        border-radius: 10px;
-        overflow-y: scroll;
+        border-radius: 0 0 10px 10px;
+        border: 1px solid #333;
+        overflow-y: auto;
         white-space: pre-wrap;
         font-size: 13px;
         font-family: Consolas, monospace;
         color: #00FF88;
+    }
+
+    /* 스크롤바 커스텀 (코드 박스 내부) */
+    #result::-webkit-scrollbar,
+    #astJsonBox::-webkit-scrollbar {
+        width: 8px;
+    }
+    #result::-webkit-scrollbar-track,
+    #astJsonBox::-webkit-scrollbar-track {
+        background: #202020;
+        border-radius: 10px;
+    }
+    #result::-webkit-scrollbar-thumb,
+    #astJsonBox::-webkit-scrollbar-thumb {
+        background: #00ff88cc;
+        border-radius: 10px;
+    }
+
+    /* Firefox용 */
+    #result,
+    #astJsonBox {
+        scrollbar-width: thin;
+        scrollbar-color: #00ff88cc #202020;
     }
 </style>
 </head>
@@ -119,27 +155,37 @@
 
 <div id="summaryBox">📝 AST 요약이 여기에 표시됩니다.</div>
 
-<div id="result">AST 전체 JSON이 여기에 표시됩니다.</div>
-<div id="astJsonBox" style="display:none;">ZIP 내부 ast.json 결과가 여기에 표시됩니다.</div>
+<!-- 코드 결과 1: Meriyah로 파싱한 app.js AST -->
+<div class="code-section">
+    <div class="code-title">📄 app.js AST (Meriyah 파싱 결과)</div>
+    <div id="result" class="code-box">AST 전체 JSON이 여기에 표시됩니다.</div>
+</div>
+
+<!-- 코드 결과 2: ZIP 내부 ast.json 파일 내용 -->
+<div class="code-section" id="astJsonSection" style="display:none;">
+    <div class="code-title">📁 ZIP 내부 ast.json (이미 존재하는 AST 파일)</div>
+    <div id="astJsonBox" class="code-box">ZIP 내부 ast.json 결과가 여기에 표시됩니다.</div>
+</div>
 
 <script>
 let latestSummary = null;
 let latestAST = null;
 
 // 공통 DOM 참조
-const dropZone   = document.getElementById("dropZone");
-const zipInput   = document.getElementById("zipUpload");
-const fileButton = document.getElementById("fileButton");
-const summaryBox = document.getElementById("summaryBox");
-const resultBox  = document.getElementById("result");
-const astJsonBox = document.getElementById("astJsonBox");
+const dropZone      = document.getElementById("dropZone");
+const zipInput      = document.getElementById("zipUpload");
+const fileButton    = document.getElementById("fileButton");
+const summaryBox    = document.getElementById("summaryBox");
+const resultBox     = document.getElementById("result");
+const astJsonBox    = document.getElementById("astJsonBox");
+const astJsonSection = document.getElementById("astJsonSection");
 
 /*===============================
     파일 선택 버튼 → input 클릭
 ===============================*/
 fileButton.addEventListener("click", (e) => {
-    e.preventDefault();       // 혹시 모를 기본 동작 방지
-    zipInput.click();         // 숨겨진 file input 강제 클릭
+    e.preventDefault();
+    zipInput.click();
 });
 
 /*===============================
@@ -201,10 +247,11 @@ async function handleZipFile(file) {
 
     if (astJsonFile) {
         const text = await astJsonFile.async("string");
-        astJsonBox.style.display = "block";
-        astJsonBox.textContent = JSON.stringify(JSON.parse(text), null, 2);
+        astJsonSection.style.display = "block";
+        astJsonBox.textContent =
+            JSON.stringify(JSON.parse(text), null, 2);
     } else {
-        astJsonBox.style.display = "none";
+        astJsonSection.style.display = "none";
         astJsonBox.textContent = "";
     }
 }
@@ -220,8 +267,13 @@ function analyzeAST(ast) {
 
         if (node.type === "FunctionDeclaration") functions++;
         if (node.type === "VariableDeclarator") variables++;
-        if (node.type === "CallExpression" && node.callee?.property?.name === "addEventListener")
+        if (node.type === "CallExpression" &&
+            node.callee &&
+            node.callee.property &&
+            node.callee.property.name === "addEventListener"
+        ) {
             eventListeners++;
+        }
 
         if (node.loc) lines = Math.max(lines, node.loc.end.line);
 
