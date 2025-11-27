@@ -99,16 +99,20 @@
 <label for="zipUpload" id="dropZone" class="upload-box">
     <p>📦 ZIP 파일 업로드 또는 드래그 앤 드롭</p>
     <p style="font-size: 13px; color:#aaa;">(JavaScript 파일 포함)</p>
-    <button style="
-        margin-top:10px;
-        padding:10px 20px;
-        border:none;
-        border-radius:8px;
-        background:#FFCC66;
-        color:#000;
-        cursor:pointer;
-        font-weight:bold;
-    ">파일 선택</button>
+    <button
+        id="fileButton"
+        type="button"
+        style="
+            margin-top:10px;
+            padding:10px 20px;
+            border:none;
+            border-radius:8px;
+            background:#FFCC66;
+            color:#000;
+            cursor:pointer;
+            font-weight:bold;
+        "
+    >파일 선택</button>
 </label>
 
 <input type="file" id="zipUpload" accept=".zip">
@@ -122,15 +126,34 @@
 let latestSummary = null;
 let latestAST = null;
 
+// 공통 DOM 참조
+const dropZone   = document.getElementById("dropZone");
+const zipInput   = document.getElementById("zipUpload");
+const fileButton = document.getElementById("fileButton");
+const summaryBox = document.getElementById("summaryBox");
+const resultBox  = document.getElementById("result");
+const astJsonBox = document.getElementById("astJsonBox");
+
+/*===============================
+    파일 선택 버튼 → input 클릭
+===============================*/
+fileButton.addEventListener("click", (e) => {
+    e.preventDefault();       // 혹시 모를 기본 동작 방지
+    zipInput.click();         // 숨겨진 file input 강제 클릭
+});
+
 /*===============================
     Drag & Drop + File Input
 ===============================*/
-const dropZone = document.getElementById("dropZone");
 dropZone.addEventListener("dragover", e => {
     e.preventDefault();
     dropZone.classList.add("dragover");
 });
-dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+
+dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("dragover");
+});
+
 dropZone.addEventListener("drop", e => {
     e.preventDefault();
     dropZone.classList.remove("dragover");
@@ -138,7 +161,8 @@ dropZone.addEventListener("drop", e => {
     if (file) handleZipFile(file);
 });
 
-document.getElementById("zipUpload").addEventListener("change", e => {
+// 파일 선택 input 변경 시
+zipInput.addEventListener("change", e => {
     const file = e.target.files[0];
     if (file) handleZipFile(file);
 });
@@ -179,6 +203,9 @@ async function handleZipFile(file) {
         const text = await astJsonFile.async("string");
         astJsonBox.style.display = "block";
         astJsonBox.textContent = JSON.stringify(JSON.parse(text), null, 2);
+    } else {
+        astJsonBox.style.display = "none";
+        astJsonBox.textContent = "";
     }
 }
 
@@ -212,7 +239,7 @@ function computeExtendedMetrics(ast, summary) {
     return {
         loc: summary.loc,
         cyclomatic: Math.max(1, summary.functions + summary.eventListeners),
-        cbo: summary.functions,    
+        cbo: summary.functions,
         rfc: summary.functions + summary.variables,
         fanOut: summary.variables,
         lcom: Math.max(0, summary.functions - 1),
@@ -256,23 +283,22 @@ function displaySummary(fileName, summary) {
             </div>
 
             <!-- 오른쪽 패널 -->
-                <div class="quality-right">
-                    <h3>📐 확장 코드 메트릭</h3>
-                    • LOC <span style="color:#aaa">(코드 라인 수)</span>: <b>${extended.loc}</b><br>
-                    • Cyclomatic Complexity <span style="color:#aaa">(분기 복잡도)</span>: <b>${extended.cyclomatic}</b><br>
-                    • Coupling (CBO) <span style="color:#aaa">(결합도)</span>: <b>${extended.cbo}</b><br>
-                    • RFC <span style="color:#aaa">(응답 메서드 수)</span>: <b>${extended.rfc}</b><br>
-                    • Fan-out <span style="color:#aaa">(다른 모듈로의 의존)</span>: <b>${extended.fanOut}</b><br>
-                    • Cohesion (LCOM) <span style="color:#aaa">(응집도 부족)</span>: <b>${extended.lcom}</b><br>
-                    • TCC <span style="color:#aaa">(강한 클래스 응집도)</span>: <b>${extended.tcc.toFixed(2)}</b><br>
-                    • DIT <span style="color:#aaa">(상속 깊이)</span>: <b>${extended.dit}</b><br>
-                    • NOC <span style="color:#aaa">(자식 클래스 수)</span>: <b>${extended.noc}</b><br>
-                    • WMC <span style="color:#aaa">(가중 메서드 수)</span>: <b>${extended.wmc}</b><br>
-                    • Halstead Volume <span style="color:#aaa">(할스테드 볼륨)</span>: <b>${extended.halsteadVolume}</b><br>
-                    • Halstead Effort <span style="color:#aaa">(할스테드 노력치)</span>: <b>${extended.halsteadEffort}</b><br>
-                    • Maintainability Index <span style="color:#aaa">(유지보수 지수)</span>: <b>${extended.maintainabilityIndex}</b><br>
-                </div>
-
+            <div class="quality-right">
+                <h3>📐 확장 코드 메트릭</h3>
+                • LOC <span style="color:#aaa">(코드 라인 수)</span>: <b>${extended.loc}</b><br>
+                • Cyclomatic Complexity <span style="color:#aaa">(분기 복잡도)</span>: <b>${extended.cyclomatic}</b><br>
+                • Coupling (CBO) <span style="color:#aaa">(결합도)</span>: <b>${extended.cbo}</b><br>
+                • RFC <span style="color:#aaa">(응답 메서드 수)</span>: <b>${extended.rfc}</b><br>
+                • Fan-out <span style="color:#aaa">(다른 모듈로의 의존)</span>: <b>${extended.fanOut}</b><br>
+                • Cohesion (LCOM) <span style="color:#aaa">(응집도 부족)</span>: <b>${extended.lcom}</b><br>
+                • TCC <span style="color:#aaa">(강한 클래스 응집도)</span>: <b>${extended.tcc.toFixed(2)}</b><br>
+                • DIT <span style="color:#aaa">(상속 깊이)</span>: <b>${extended.dit}</b><br>
+                • NOC <span style="color:#aaa">(자식 클래스 수)</span>: <b>${extended.noc}</b><br>
+                • WMC <span style="color:#aaa">(가중 메서드 수)</span>: <b>${extended.wmc}</b><br>
+                • Halstead Volume <span style="color:#aaa">(할스테드 볼륨)</span>: <b>${extended.halsteadVolume}</b><br>
+                • Halstead Effort <span style="color:#aaa">(할스테드 노력치)</span>: <b>${extended.halsteadEffort}</b><br>
+                • Maintainability Index <span style="color:#aaa">(유지보수 지수)</span>: <b>${extended.maintainabilityIndex}</b><br>
+            </div>
 
         </div>
     `;
@@ -283,14 +309,16 @@ function displaySummary(fileName, summary) {
 ===============================*/
 function calculateQualityScore(summary) {
     const maxFunc = 20;
-    const maxVar = 30;
+    const maxVar  = 30;
 
-    const funcScore = Math.max(0, 100 - (summary.functions / maxFunc) * 100);
-    const varScore = Math.max(0, 100 - (summary.variables / maxVar) * 100);
+    const funcScore  = Math.max(0, 100 - (summary.functions / maxFunc) * 100);
+    const varScore   = Math.max(0, 100 - (summary.variables / maxVar) * 100);
     const eventScore = Math.max(0, 100 - Math.abs(summary.eventListeners - 3) * 20);
 
     const miScore = Math.round(
-        funcScore * 0.4 + varScore * 0.3 + eventScore * 0.3
+        funcScore * 0.4 +
+        varScore  * 0.3 +
+        eventScore * 0.3
     );
 
     return {
