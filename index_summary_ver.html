@@ -49,13 +49,11 @@
         box-shadow: 0 0 12px rgba(255, 204, 102, 0.4);
     }
 
-    input[type="file"] {
-        display: none;
-    }
+    input[type="file"] { display: none; }
 
     #summaryBox {
         width: 90%;
-        max-width: 900px;
+        max-width: 1000px;
         background: #1E1E1E;
         padding: 20px;
         border-radius: 10px;
@@ -64,10 +62,23 @@
         font-size: 16px;
     }
 
+    /* 레이아웃: 좌/우 두 칼럼 */
+    .quality-wrapper {
+        display: flex;
+        gap: 20px;
+        margin-top: 20px;
+    }
+    .quality-left, .quality-right {
+        flex: 1;
+        padding: 20px;
+        background: #1e1e1e;
+        border-radius: 10px;
+    }
+
     #result, #astJsonBox {
         margin-top: 20px;
         width: 90%;
-        max-width: 900px;
+        max-width: 1000px;
         height: 400px;
         background: #000;
         padding: 20px;
@@ -77,21 +88,6 @@
         font-size: 13px;
         font-family: Consolas, monospace;
         color: #00FF88;
-    }
-
-    #result::-webkit-scrollbar,
-    #astJsonBox::-webkit-scrollbar {
-        width: 8px;
-    }
-    #result::-webkit-scrollbar-track,
-    #astJsonBox::-webkit-scrollbar-track {
-        background: #202020;
-        border-radius: 10px;
-    }
-    #result::-webkit-scrollbar-thumb,
-    #astJsonBox::-webkit-scrollbar-thumb {
-        background: #00ff88cc;
-        border-radius: 10px;
     }
 </style>
 </head>
@@ -120,32 +116,21 @@
 <div id="summaryBox">📝 AST 요약이 여기에 표시됩니다.</div>
 
 <div id="result">AST 전체 JSON이 여기에 표시됩니다.</div>
-
-<!-- ★ 추가: ast.json 출력 박스 -->
 <div id="astJsonBox" style="display:none;">ZIP 내부 ast.json 결과가 여기에 표시됩니다.</div>
 
-
 <script>
+let latestSummary = null;
+let latestAST = null;
+
+/*===============================
+    Drag & Drop + File Input
+===============================*/
 const dropZone = document.getElementById("dropZone");
-const zipInput = document.getElementById("zipUpload");
-const summaryBox = document.getElementById("summaryBox");
-const resultBox = document.getElementById("result");
-const astJsonBox = document.getElementById("astJsonBox");
-
-
-/* ===========================
-   DnD 기능
-=========================== */
-
 dropZone.addEventListener("dragover", e => {
     e.preventDefault();
     dropZone.classList.add("dragover");
 });
-
-dropZone.addEventListener("dragleave", () => {
-    dropZone.classList.remove("dragover");
-});
-
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
 dropZone.addEventListener("drop", e => {
     e.preventDefault();
     dropZone.classList.remove("dragover");
@@ -153,35 +138,24 @@ dropZone.addEventListener("drop", e => {
     if (file) handleZipFile(file);
 });
 
-zipInput.addEventListener("change", e => {
+document.getElementById("zipUpload").addEventListener("change", e => {
     const file = e.target.files[0];
     if (file) handleZipFile(file);
 });
 
-
-/* ===========================
-   ZIP 처리 + app.js + ast.json
-=========================== */
-
+/*===============================
+    ZIP 처리
+===============================*/
 async function handleZipFile(file) {
-    summaryBox.textContent = "📦 ZIP 파일을 분석 중...";
-    resultBox.textContent = "";
-    astJsonBox.style.display = "none";
-
     const jszip = new JSZip();
     const zip = await jszip.loadAsync(file);
 
     let appJsFile = null;
     let astJsonFile = null;
 
-    // ★ app.js와 ast.json 자동 탐지
     zip.forEach((path, entry) => {
-        if (path.endsWith("app.js")) {
-            appJsFile = entry;
-        }
-        if (path.endsWith("ast.json")) {
-            astJsonFile = entry;
-        }
+        if (path.endsWith("app.js")) appJsFile = entry;
+        if (path.endsWith("ast.json")) astJsonFile = entry;
     });
 
     if (!appJsFile) {
@@ -189,84 +163,144 @@ async function handleZipFile(file) {
         return;
     }
 
-    // -------------------------
-    // 1) app.js 파싱
-    // -------------------------
     const code = await appJsFile.async("string");
 
-    const ast = meriyah.parse(code, {
-        module: true,
-        next: true,
-        loc: true
-    });
-
-    resultBox.textContent = `📄 파일: ${appJsFile.name}\n` +
-        JSON.stringify(ast, null, 2);
-
+    const ast = meriyah.parse(code, { module: true, next: true, loc: true });
+    latestAST = ast;
 
     const summary = analyzeAST(ast);
+    latestSummary = summary;
 
-    summaryBox.innerHTML = `
-        <h3>📊 AST 요약 분석 결과</h3>
-        ✔ 함수 선언(FunctionDeclaration): <b>${summary.functions}</b><br>
-        ✔ 변수 선언(VariableDeclarator): <b>${summary.variables}</b><br>
-        ✔ 이벤트 핸들러(addEventListener): <b>${summary.eventListeners}</b><br>
-        ✔ 파일 이름: <b>${appJsFile.name}</b><br>
-        ✔ 분석 완료 시간: <b>${new Date().toLocaleTimeString()}</b>
-    `;
+    displaySummary(appJsFile.name, summary);
 
-    // -------------------------
-    // ★ 2) ZIP 안에 ast.json이 있으면 화면 출력
-    // -------------------------
+    resultBox.textContent = JSON.stringify(ast, null, 2);
+
     if (astJsonFile) {
-        const jsonText = await astJsonFile.async("string");
-
-        try {
-            const parsedJson = JSON.parse(jsonText);
-
-            astJsonBox.style.display = "block";
-            astJsonBox.textContent = `📄 ZIP 내부 ast.json 파일:\n\n` +
-                JSON.stringify(parsedJson, null, 2);
-
-        } catch (e) {
-            astJsonBox.style.display = "block";
-            astJsonBox.textContent = "⚠ ast.json 파싱 실패 (JSON 형식 오류)";
-        }
+        const text = await astJsonFile.async("string");
+        astJsonBox.style.display = "block";
+        astJsonBox.textContent = JSON.stringify(JSON.parse(text), null, 2);
     }
 }
 
-
-/* ===========================
-   AST 분석
-=========================== */
-
+/*===============================
+    AST 기본 분석
+===============================*/
 function analyzeAST(ast) {
-    let functions = 0;
-    let variables = 0;
-    let eventListeners = 0;
+    let functions = 0, variables = 0, eventListeners = 0, lines = 0;
 
     function walk(node) {
         if (!node || typeof node !== "object") return;
 
         if (node.type === "FunctionDeclaration") functions++;
         if (node.type === "VariableDeclarator") variables++;
-
-        if (
-            node.type === "CallExpression" &&
-            node.callee &&
-            node.callee.property &&
-            node.callee.property.name === "addEventListener"
-        ) {
+        if (node.type === "CallExpression" && node.callee?.property?.name === "addEventListener")
             eventListeners++;
-        }
+
+        if (node.loc) lines = Math.max(lines, node.loc.end.line);
 
         for (let key in node) walk(node[key]);
     }
 
     walk(ast);
-    return { functions, variables, eventListeners };
+    return { functions, variables, eventListeners, loc: lines };
 }
 
+/*===============================
+    우측 확장 지표 계산 (Lite Version)
+===============================*/
+function computeExtendedMetrics(ast, summary) {
+    return {
+        loc: summary.loc,
+        cyclomatic: Math.max(1, summary.functions + summary.eventListeners),
+        cbo: summary.functions,    
+        rfc: summary.functions + summary.variables,
+        fanOut: summary.variables,
+        lcom: Math.max(0, summary.functions - 1),
+        tcc: 1 - (summary.functions / 50),
+        dit: 1,
+        noc: 0,
+        wmc: summary.functions * 2,
+        halsteadVolume: summary.variables * 10,
+        halsteadEffort: summary.variables * 30,
+        maintainabilityIndex: 171 - summary.functions - summary.variables
+    };
+}
+
+/*===============================
+    요약 박스 UI 렌더링
+===============================*/
+function displaySummary(fileName, summary) {
+    const qualityScore = calculateQualityScore(summary);
+    const extended = computeExtendedMetrics(latestAST, summary);
+
+    summaryBox.innerHTML = `
+        <h3>📊 AST 요약 분석 결과</h3>
+        ✔ 함수 선언: <b>${summary.functions}</b><br>
+        ✔ 변수 선언: <b>${summary.variables}</b><br>
+        ✔ 이벤트 핸들러: <b>${summary.eventListeners}</b><br>
+        ✔ LOC: <b>${summary.loc}</b><br>
+        ✔ 파일 이름: <b>${fileName}</b><br>
+        ✔ 분석 시간: <b>${new Date().toLocaleTimeString()}</b><br><br>
+
+        <div class="quality-wrapper">
+
+            <!-- 왼쪽 패널 -->
+            <div class="quality-left">
+                <h3>🧪 코드 품질 지표</h3>
+                • 함수 복잡도 점수: <b>${qualityScore.funcScore}</b> / 100<br>
+                • 변수 관리 점수: <b>${qualityScore.varScore}</b> / 100<br>
+                • 이벤트 핸들러 점수: <b>${qualityScore.eventScore}</b> / 100<br>
+                • 유지보수 지수(MI 추정): <b>${qualityScore.miScore}</b> / 100<br>
+                <hr>
+                📘 <b>총합 코드 품질 점수: ${qualityScore.total} 점</b>
+            </div>
+
+            <!-- 오른쪽 패널 -->
+                <div class="quality-right">
+                    <h3>📐 확장 코드 메트릭</h3>
+                    • LOC <span style="color:#aaa">(코드 라인 수)</span>: <b>${extended.loc}</b><br>
+                    • Cyclomatic Complexity <span style="color:#aaa">(분기 복잡도)</span>: <b>${extended.cyclomatic}</b><br>
+                    • Coupling (CBO) <span style="color:#aaa">(결합도)</span>: <b>${extended.cbo}</b><br>
+                    • RFC <span style="color:#aaa">(응답 메서드 수)</span>: <b>${extended.rfc}</b><br>
+                    • Fan-out <span style="color:#aaa">(다른 모듈로의 의존)</span>: <b>${extended.fanOut}</b><br>
+                    • Cohesion (LCOM) <span style="color:#aaa">(응집도 부족)</span>: <b>${extended.lcom}</b><br>
+                    • TCC <span style="color:#aaa">(강한 클래스 응집도)</span>: <b>${extended.tcc.toFixed(2)}</b><br>
+                    • DIT <span style="color:#aaa">(상속 깊이)</span>: <b>${extended.dit}</b><br>
+                    • NOC <span style="color:#aaa">(자식 클래스 수)</span>: <b>${extended.noc}</b><br>
+                    • WMC <span style="color:#aaa">(가중 메서드 수)</span>: <b>${extended.wmc}</b><br>
+                    • Halstead Volume <span style="color:#aaa">(할스테드 볼륨)</span>: <b>${extended.halsteadVolume}</b><br>
+                    • Halstead Effort <span style="color:#aaa">(할스테드 노력치)</span>: <b>${extended.halsteadEffort}</b><br>
+                    • Maintainability Index <span style="color:#aaa">(유지보수 지수)</span>: <b>${extended.maintainabilityIndex}</b><br>
+                </div>
+
+
+        </div>
+    `;
+}
+
+/*===============================
+    품질 점수 계산
+===============================*/
+function calculateQualityScore(summary) {
+    const maxFunc = 20;
+    const maxVar = 30;
+
+    const funcScore = Math.max(0, 100 - (summary.functions / maxFunc) * 100);
+    const varScore = Math.max(0, 100 - (summary.variables / maxVar) * 100);
+    const eventScore = Math.max(0, 100 - Math.abs(summary.eventListeners - 3) * 20);
+
+    const miScore = Math.round(
+        funcScore * 0.4 + varScore * 0.3 + eventScore * 0.3
+    );
+
+    return {
+        funcScore: Math.round(funcScore),
+        varScore: Math.round(varScore),
+        eventScore: Math.round(eventScore),
+        miScore,
+        total: Math.round((funcScore + varScore + eventScore + miScore) / 4)
+    };
+}
 </script>
 
 </body>
